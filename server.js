@@ -1,5 +1,13 @@
+require('dotenv').config();
+const mongoose = require('mongoose');
+const Note = require('./Note');
+
 const express = require('express');
 const app = express();
+
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
 app.use(express.json());
 
@@ -7,12 +15,6 @@ app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
   next();
 });
-
-let notes = [
-  { id: 1, text: 'Buy groceries' },
-  { id: 2, text: 'Finish Express project' },
-];
-let nextId = 3;
 
 const products = [
   { id: 1, name: 'Laptop', price: 50000 },
@@ -56,60 +58,82 @@ app.post('/echo', (req, res) => {
   res.json({ youSent: req.body });
 });
 
-app.get('/notes',(req,res)=>{
-  res.json(notes);
-});
-
-app.get('/notes/:id',(req,res)=>{
-  const id=Number(req.params.id);
-  const note=notes.find(n=>n.id===id);
-
-  if(!note){
-    return res.status(404).json({message: 'Note not found'});
+// Get all notes from MongoDB
+app.get('/notes', async (req, res) => {
+  try {
+    const notes = await Note.find();
+    res.json(notes);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
-
-  res.json(note);
 });
 
-app.post('/notes', (req, res) => {
+// Get a single note by ID from MongoDB
+app.get('/notes/:id', async (req, res) => {
+  try {
+    const note = await Note.findById(req.params.id);
+    if (!note) {
+      return res.status(404).json({ message: 'Note not found' });
+    }
+    res.json(note);
+  } catch (err) {
+    res.status(400).json({ message: 'Invalid ID format' });
+  }
+});
+
+// Create a new note in MongoDB
+app.post('/notes', async (req, res) => {
   const { text } = req.body;
 
   if (!text) {
     return res.status(400).json({ message: 'Text is required' });
   }
 
-  const newNote = { id: nextId++, text };
-  notes.push(newNote);
-  res.status(201).json(newNote);
+  try {
+    const newNote = await Note.create({ text });
+    res.status(201).json(newNote);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-app.put('/notes/:id', (req, res) => {
-  const id = Number(req.params.id);
-  const note = notes.find(n => n.id === id);
-
-  if (!note) {
-    return res.status(404).json({ message: 'Note not found' });
-  }
-
+// Update a note by ID in MongoDB
+app.put('/notes/:id', async (req, res) => {
   const { text } = req.body;
   if (!text) {
     return res.status(400).json({ message: 'Text is required' });
   }
 
-  note.text = text;
-  res.json(note);
+  try {
+    const updatedNote = await Note.findByIdAndUpdate(
+      req.params.id,
+      { text },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedNote) {
+      return res.status(404).json({ message: 'Note not found' });
+    }
+
+    res.json(updatedNote);
+  } catch (err) {
+    res.status(400).json({ message: 'Invalid ID format' });
+  }
 });
 
-app.delete('/notes/:id', (req, res) => {
-  const id = Number(req.params.id);
-  const noteIndex = notes.findIndex(n => n.id === id);
+// Delete a note by ID from MongoDB
+app.delete('/notes/:id', async (req, res) => {
+  try {
+    const deletedNote = await Note.findByIdAndDelete(req.params.id);
 
-  if (noteIndex === -1) {
-    return res.status(404).json({ message: 'Note not found' });
+    if (!deletedNote) {
+      return res.status(404).json({ message: 'Note not found' });
+    }
+
+    res.status(204).send();
+  } catch (err) {
+    res.status(400).json({ message: 'Invalid ID format' });
   }
-
-  notes.splice(noteIndex, 1);
-  res.status(204).send();
 });
 
 app.listen(3000, () => {
