@@ -2,6 +2,9 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const Note = require('./Note');
 
+const bcrypt = require('bcrypt');
+const User = require('./user');
+
 const express = require('express');
 const app = express();
 
@@ -39,24 +42,6 @@ app.get('/search', (req, res) => {
   res.json({ searchedFor: term, limit: limit });
 });
 
-app.get('/products', (req, res) => {
-  res.json(products);
-});
-
-app.get('/products/:id', (req, res) => {
-  const id = Number(req.params.id);
-  const product = products.find(p => p.id === id);
-
-  if (!product) {
-    return res.status(404).json({ message: 'Product not found' });
-  }
-
-  res.json(product);
-});
-
-app.post('/echo', (req, res) => {
-  res.json({ youSent: req.body });
-});
 
 // Get all notes from MongoDB
 app.get('/notes', async (req, res) => {
@@ -74,8 +59,8 @@ app.get('/notes/:id', async (req, res) => {
     const note = await Note.findById(req.params.id);
     if (!note) {
       return res.status(404).json({ message: 'Note not found' });
-      res.json(note);
     }
+    res.json(note);
   } catch (err) {
     res.status(400).json({ message: 'Invalid ID format' });
   }
@@ -133,6 +118,38 @@ app.delete('/notes/:id', async (req, res) => {
     res.status(204).send();
   } catch (err) {
     res.status(400).json({ message: 'Invalid ID format' });
+  }
+});
+
+//build the signup route
+app.post('/auth/signup', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: 'Name, email, and password are required' });
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(409).json({ message: 'Email already registered' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newUser = await User.create({
+      name,
+      email,
+      password: hashedPassword,
+    });
+
+    res.status(201).json({
+      id: newUser._id,
+      name: newUser.name,
+      email: newUser.email,
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
 
