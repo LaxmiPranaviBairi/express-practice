@@ -10,6 +10,8 @@ const jwt = require('jsonwebtoken');
 
 const authMiddleware = require('./authMiddleware');
 
+const Group = require('./Group');
+
 const express = require('express');
 const app = express();
 
@@ -197,6 +199,61 @@ app.get('/auth/me', authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('-password');
     res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+//create a group
+app.post('/groups', authMiddleware, async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ message: 'Group name is required' });
+
+    const newGroup = await Group.create({
+      name,
+      members: [req.user.id],
+      createdBy: req.user.id,
+    });
+
+    res.status(201).json(newGroup);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+//add a member to a group
+app.post('/groups/:id/members', authMiddleware, async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ message: 'userId is required' });
+
+    const group = await Group.findById(req.params.id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    const userToAdd = await User.findById(userId);
+    if (!userToAdd) return res.status(404).json({ message: 'User not found' });
+
+    if (group.members.includes(userId)) {
+      return res.status(409).json({ message: 'User already in group' });
+    }
+
+    group.members.push(userId);
+    await group.save();
+
+    res.json(group);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+//get a group, with member details populated
+app.get('/groups/:id', authMiddleware, async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.id).populate('members', 'name email');
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    res.json(group);
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
