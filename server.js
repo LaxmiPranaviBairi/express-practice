@@ -8,6 +8,8 @@ const User = require('./user');
 //import jsonwebtoken and bcrypt 
 const jwt = require('jsonwebtoken');
 
+const authMiddleware = require('./authMiddleware');
+
 const express = require('express');
 const app = express();
 
@@ -185,6 +187,16 @@ app.post('/auth/login', async (req, res) => {
       token,
       user: { id: user._id, name: user.name, email: user.email },
     });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+//add a simple protected test route
+app.get('/auth/me', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    res.json(user);
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
