@@ -12,6 +12,8 @@ const authMiddleware = require('./authMiddleware');
 
 const Group = require('./Group');
 
+const Expense = require('./Expense');
+
 const express = require('express');
 const app = express();
 
@@ -254,6 +256,50 @@ app.get('/groups/:id', authMiddleware, async (req, res) => {
     if (!group) return res.status(404).json({ message: 'Group not found' });
 
     res.json(group);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+//add an expense to a group
+app.post('/groups/:id/expenses', authMiddleware, async (req, res) => {
+  try {
+    const { description, amount, paidBy, splitBetween } = req.body;
+
+    if (!description || !amount || !paidBy || !splitBetween) {
+      return res.status(400).json({ message: 'description, amount, paidBy, and splitBetween are required' });
+    }
+
+    const group = await Group.findById(req.params.id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    const totalShares = splitBetween.reduce((sum, s) => sum + s.share, 0);
+    if (totalShares !== amount) {
+      return res.status(400).json({ message: 'Shares must add up to the total amount' });
+    }
+
+    const newExpense = await Expense.create({
+      group: req.params.id,
+      description,
+      amount,
+      paidBy,
+      splitBetween,
+    });
+
+    res.status(201).json(newExpense);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+//list all expenses for a group
+app.get('/groups/:id/expenses', authMiddleware, async (req, res) => {
+  try {
+    const expenses = await Expense.find({ group: req.params.id })
+      .populate('paidBy', 'name email')
+      .populate('splitBetween.user', 'name email');
+
+    res.json(expenses);
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
