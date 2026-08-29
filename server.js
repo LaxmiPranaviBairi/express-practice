@@ -305,6 +305,75 @@ app.get('/groups/:id/expenses', authMiddleware, async (req, res) => {
   }
 });
 
+//calculate net balance per person
+function calculateNetBalances(expenses, memberIds) {
+  const balances = {};
+  memberIds.forEach(id => { balances[id.toString()] = 0; });
+
+  expenses.forEach(expense => {
+    const paidById = expense.paidBy.toString();
+    balances[paidById] += expense.amount;
+
+    expense.splitBetween.forEach(split => {
+      const userId = split.user.toString();
+      balances[userId] -= split.share;
+    });
+  });
+
+  return balances;
+}
+
+//simplify into minimal settlements
+function simplifyBalances(balances) {
+  const creditors = [];
+  const debtors = [];
+
+  for (const [userId, amount] of Object.entries(balances)) {
+    if (amount > 0) creditors.push({ userId, amount });
+    else if (amount < 0) debtors.push({ userId, amount: -amount });
+  }
+
+  const settlements = [];
+  let i = 0, j = 0;
+
+  while (i < debtors.length && j < creditors.length) {
+    const debtor = debtors[i];
+    const creditor = creditors[j];
+    const settledAmount = Math.min(debtor.amount, creditor.amount);
+
+    settlements.push({
+      from: debtor.userId,
+      to: creditor.userId,
+      amount: settledAmount,
+    });
+
+    debtor.amount -= settledAmount;
+    creditor.amount -= settledAmount;
+
+    if (debtor.amount === 0) i++;
+    if (creditor.amount === 0) j++;
+  }
+
+  return settlements;
+}
+
+//build the route using both functions
+app.get('/groups/:id/balances', authMiddleware, async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    const expenses = await Expense.find({ group: req.params.id });
+
+    const netBalances = calculateNetBalances(expenses, group.members);
+    const settlements = simplifyBalances(netBalances);
+
+    res.json({ netBalances, settlements });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
 app.listen(3000, () => {
   console.log('Server running on port 3000');
 });
